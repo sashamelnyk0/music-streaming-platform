@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+
+  # ═══════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════
+
+  postgres:
+    image: postgres:15
+    container_name: music-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - music-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: music-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - music-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: music-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - music-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: music-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - music-network
+
+  # ═══════════════════════════════
+  # MICROSERVICES
+  # ═══════════════════════════════
+
+  user-service:
+    build:
+      context: ./demo
+      dockerfile: Dockerfile
+    container_name: music-user-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/music_users
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      JWT_SECRET: "3f8c2a1b9d4e7f0a2c5b8e1d4f7a0c3b6e9f2a5d8b1c4e7f0a3b6d9c2e5f8a1b"
+    depends_on:
+      - postgres
+    networks:
+      - music-network
+
+  catalog-service:
+    build:
+      context: ./catalog-service
+      dockerfile: Dockerfile
+    container_name: music-catalog-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/music_catalog
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: "3f8c2a1b9d4e7f0a2c5b8e1d4f7a0c3b6e9f2a5d8b1c4e7f0a3b6d9c2e5f8a1b"
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - music-network
+
+  stream-service:
+    build:
+      context: ./stream-service
+      dockerfile: Dockerfile
+    container_name: music-stream-service
+    ports:
+      - "8083:8083"
+    environment:
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      JWT_SECRET: "3f8c2a1b9d4e7f0a2c5b8e1d4f7a0c3b6e9f2a5d8b1c4e7f0a3b6d9c2e5f8a1b"
+    depends_on:
+      - minio
+    networks:
+      - music-network
+
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: music-analytics-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/music_analytics
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: "3f8c2a1b9d4e7f0a2c5b8e1d4f7a0c3b6e9f2a5d8b1c4e7f0a3b6d9c2e5f8a1b"
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - music-network
+
+# ═══════════════════════════════
+# VOLUMES AND NETWORKS
+# ═══════════════════════════════
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  music-network:
+    driver: bridge
