@@ -1,6 +1,6 @@
 # Music Streaming Platform
 
-A production-ready microservices backend for music streaming, built with Java 17+, Spring Boot 3, Apache Kafka, and MinIO. Inspired by Spotify's architecture.
+A production-ready microservices backend for music streaming, built with Java 21, Spring Boot 3, Apache Kafka, and MinIO. Inspired by Spotify's architecture.
 
 ---
 
